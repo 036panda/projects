@@ -1,0 +1,229 @@
+---
+title: "Visualization Project"
+author: "Shevya Panda"
+date: "10/1/2024"
+output: html_document
+---
+
+****Install Dependencies****
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+```
+
+Found Dataset on Cars in various states in the United States
+
+https://www.kaggle.com/datasets/doaaalsenani/usa-cers-dataset
+
+Research Questions:
+1. What is the average mileage and most popular color for cars per state
+2. How do the average prices of different car brands differ from 2015 to 2020?
+
+```{r}
+US<-map_data("state")
+cars<-read.csv("USAcars.csv")
+```
+
+***Question 1:What is the average mileage and most popular color for cars per state***
+
+Data Wrangling
+1. Data needs to be combined, the "state" and "region" variable is the key that can be used to combine the two datasets
+
+```{r}
+US1<-rename(US, state=region)
+head(US1)
+```
+```{r}
+US_cars<-full_join(US1,cars, by="state")
+head(US_cars)
+```
+
+
+Now I want to create an interactive map, coloured with the most popular car colour, and then when you hover over a state I want to see information on the average car mileage. So to do that I will create a new table and then combine it with the longitude and latitude data from the original dataframe.
+
+```{r}
+US_cars <- US_cars %>%
+  mutate(color = ifelse(is.na(color), "NA", 
+                        recode(color, 
+                              "bright white clearcoat" = "white", 
+                              "cayenne red" = "red",
+                              "glacier white" = "white")))
+
+US_cars_summarized <- US_cars %>%
+  group_by(state) %>%
+  summarise(
+    avg_mileage = mean(mileage, na.rm = TRUE),
+    most_popular_color = names(which.max(table(color)))
+  )
+
+US_cars_summarized$most_popular_color[is.na(US_cars_summarized$most_popular_color)] <- "Unknown"
+
+
+US_map_data <- US_cars_summarized %>%
+  left_join(US1[, c("state", "long", "lat", "group")], by = "state")
+
+```
+
+The above is used to create a new data set and clean the existing data so that all of the variables are usable in terms of what graph I am attempting to make.
+
+```{r}
+ggplot(US_map_data, aes(x = long, y = lat, group = group, fill = most_popular_color)) +
+  geom_polygon(color="black") +
+  theme_void() +
+  theme(legend.position = "bottom") +
+  labs(title="US Used Car Average Mileage and Most Popular Vehicle Colour by State")
+```
+The graph above is a rought outline of what I am trying to make, next I need to change the colours because I think it will be more readable to have the state coloured by it's most popular used car colour.
+
+```{r}
+cargraph<-ggplot(US_map_data, aes(x = long, y = lat, group = group, fill = most_popular_color)) +
+  geom_polygon(color="black") +
+  theme_void() +
+  theme(legend.position = "bottom") +
+  scale_fill_manual(
+    values = c("white" = "white", "black" = "black", "silver" = "azure3", "NA" = "gray50","blue"="blue4", "gray"="gray","red"="red", "maroon"="maroon"
+    ),
+    name = "Most Popular Car Color"
+  )
+
+cargraph
+```
+
+Now I want to add labels for the top 5 states with the highest average mileage, to detect which states drive the most. I suspect it would be states that are home to major cities, but to do this I would need to wrangle the data a bit more to find this information.
+
+```{r}
+top_states=US_cars_summarized %>%
+  arrange(desc(avg_mileage)) %>%
+  head(5)
+
+top_states
+```
+
+Okay so based on this data, the cars with the most mileage that are being sold are in the states montana, maryland, utah, kansas, and arkansas. I want to have those states labled on the map i create.
+
+```{r}
+cargraph <- ggplot(US_map_data, aes(x = long, y = lat, group = group, fill = most_popular_color, text = paste("State: ", state, "\nAvg Mileage: ", round(avg_mileage, 2)))) +
+  geom_polygon(color="black") +
+  theme_void() +
+  theme(legend.position = "bottom") +
+  scale_fill_manual(values = c("white" = "white", "black" = "black", "silver" = "azure3", "NA" = "gray50","blue"="blue4", "gray"="gray","red"="red", "maroon"="maroon"),name = "Most Popular Car Color")+
+  labs(title = "US Used Car Average Mileage and Most Popular Color Per State")+geom_label(data=distinct(filter(US_map_data, state %in% c("montana","maryland","utah","kansas","arkansas")),state, .keep_all = T), aes(label=state), fill="pink",alpha=0.6) 
+
+cargraph
+```
+
+
+Next, I used https://plotly.com/ggplot2/ to help me make the graph interactive. I saved the previous code as a variable called car graph to make it easier for me, and then used ggplotly to make the graph interactive. I found that I ran into some issues with making the avg_mileage show up, so I used the same website to show me how to use \n to add line breaks and using the text augment in plotly to add the text. This has to be done in the original code for the graph in order to be animated using plotly in the 2nd part of the code.
+
+```{r}
+cargraph <- ggplot(US_map_data, aes(x = long, y = lat, group = group, fill = most_popular_color, text = paste("State: ", state, "\nAvg Mileage: ", round(avg_mileage, 2)))) +
+  geom_polygon(color="black") +
+  theme_void() +
+  theme(legend.position = "bottom") +
+  scale_fill_manual(values = c("white" = "white", "black" = "black", "silver" = "azure3", "NA" = "gray50","blue"="blue4", "gray"="gray","red"="red", "maroon"="maroon"),name = "Most Popular Car Color")+
+  labs(title = "US Used Car Average Mileage and Most Popular Color Per State")+geom_text(
+    data = distinct(filter(US_map_data, state %in% c("Montana", "Maryland", "Utah", "Kansas", "Arkansas")), 
+                    state, .keep_all = TRUE), 
+    aes(label = state), 
+    color = "black", 
+    size = 3, fill="pink", alpha=0.6) 
+
+ggplotly(cargraph, tooltip = "text", width = 1000, height = 600) %>%
+  layout(
+    hoverlabel = list(bgcolor = "white"), 
+    hovermode = "x unified",
+    autosize = FALSE)
+```
+
+
+```{r}
+cargraph1 <- ggplot(US_map_data, aes(x = long, y = lat, group = group, fill = most_popular_color, text = paste("State: ", state, "\nAvg Mileage: ", round(avg_mileage, 2)))) +
+  geom_polygon(color="black") +
+  theme_void() +
+  theme(legend.position = "bottom") +
+  scale_fill_manual(values = c("white" = "white", "black" = "black", "silver" = "azure3", "NA" = "gray50","blue"="blue4", "gray"="gray","red"="red", "maroon"="maroon"),name = "Most Popular Car Color")+
+  labs(title = "US Used Car Average Mileage and Most Popular Color Per State")
+
+ggplotly(cargraph1, tooltip = "text", width = 1000, height = 600) %>%
+  layout(hoverlabel = list(bgcolor = "white"), hovermode = "x unified",
+         autosize = FALSE)
+```
+
+```{r}
+library(htmlwidgets)
+
+saveWidget(ggplotly(cargraph1, tooltip = "text"), file = "interactive_carmap.html")
+```
+
+This code saves it to an html file on my computer so I can access it individually to interact with it for my presentation.
+
+Some limitations with these graphs is that some of the states are a little difficult to differentiate some of the states with a black border, I can change it to be a different color but it doesn't look as neat when I do so. However for readability it would be best to use a different color for the border. Furthermore, a way to make this graph better is to add more information on the brand of car as well or the model, people might want information on the model of the car rather than just color and mileage. To do this I would just need to add the most popular car model in the dataset and add that to the interactivity of the map I created.
+
+
+***Question 2: How do the average prices of different car brands differ from 2015 to 2020?***
+
+First I need to filter out the data to get the years I am looking into and also calculate the average price for the different car brands so I can plot it over time.
+```{r}
+cars_avg_price <- cars %>%
+  filter(between(year, 2015, 2020)) %>%
+  group_by(brand, year) %>%
+  summarise(avg_price = mean(price))
+
+head(cars_avg_price)
+```
+
+```{r}
+ggplot(cars_avg_price, aes(x = year, y = avg_price, color = brand)) +
+  geom_line() +
+  labs(title = "Average Car Price by Brand (2015-2020)", x = "Year",y = "Average Price",color = "Brand") +
+  theme_bw()
+
+```
+This is too much data to look at in one plot, so I will select a faw brands I am interested in and look into the price changes for those.
+
+```{r}
+selected_brands <- c("hyundai", "bmw", "lexus", "ford", "kia")
+
+ggplot(cars_avg_price %>% filter(brand %in% selected_brands), 
+       aes(x = year, y = avg_price, color = brand)) +
+  geom_line() +
+  labs(
+    title = "Average Car Price by Specific Brands (2015-2020)",
+    x = "Year",
+    y = "Average Price",
+    color = "Brand"
+  ) +
+  theme_bw()
+```
+
+While this was a good way to start showing the price changes over time, the graph isn't quite readable so I figured I would change the graph to another interactive format with bars depicting the prices for each individual car brand.
+
+```{r}
+carprice<-plot_ly(cars_avg_price, x=~factor(year), y=~avg_price, color = ~brand, type="bar")%>%
+layout(title = "Average Car Price by Brand (2015-2020)", xaxis = list(title = "Year"), yaxis = list(title = "Average Price (USD)"), legend = list(title = "Brand"))
+
+carprice 
+```
+
+```{r}
+saveWidget(carprice, file = "average_car_price.html")
+```
+
+Now I want to show the same information but for specific brands I am interested in.
+
+
+```{r}
+selected_brands <- c("hyundai", "bmw", "lexus", "ford", "kia")
+
+selectcarprice<-plot_ly(cars_avg_price %>% filter(brand %in% selected_brands), x = ~factor(year), y = ~avg_price, color = ~brand, type = "bar") %>%
+layout(title = "Average Car Price by Selected Brands (2015-2020)", xaxis = list(title = "Year"), yaxis = list(title = "Average Price (USD)"), legend = list(title = "Brand"))
+
+selectcarprice
+```
+
+```{r}
+saveWidget(selectcarprice, file = "average_5car_price.html")
+
+```
+
